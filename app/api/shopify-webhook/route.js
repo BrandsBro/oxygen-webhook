@@ -1,5 +1,6 @@
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
+import { createClient } from '@supabase/supabase-js';
 
 if (!getApps().length) {
   initializeApp({
@@ -10,6 +11,11 @@ if (!getApps().length) {
     }),
   });
 }
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
 
 export async function POST(request) {
   try {
@@ -28,12 +34,24 @@ export async function POST(request) {
       trackingAdded: body.fulfillments?.length > 0,
     };
 
+    // Get latest FCM token from Supabase
+    const { data, error } = await supabase
+      .from('fcm_tokens')
+      .select('token')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error || !data) {
+      return Response.json({ error: 'No FCM token found' }, { status: 500 });
+    }
+
     const title = event === 'order_fulfilled'
       ? `📦 Tracking Added #${order.orderNumber} — ${store}`
       : `🛒 New Order #${order.orderNumber} — ${store}`;
 
     await getMessaging().send({
-      token: process.env.FCM_TOKEN,
+      token: data.token,
       notification: {
         title,
         body: `${order.customer.trim()} · ${order.currency} ${order.total}`,
