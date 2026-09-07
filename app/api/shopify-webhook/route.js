@@ -15,27 +15,37 @@ export async function POST(request) {
   try {
     const { searchParams } = new URL(request.url);
     const store = searchParams.get('store') || 'Unknown Store';
+    const event = searchParams.get('event') || 'order_created';
 
     const body = await request.json();
 
     const order = {
       id: body.id,
       orderNumber: body.order_number,
-      customer: body.customer?.first_name + ' ' + body.customer?.last_name,
+      customer: (body.customer?.first_name || '') + ' ' + (body.customer?.last_name || ''),
       total: body.total_price,
-      currency: body.currency,
+      currency: body.currency || 'USD',
       trackingAdded: body.fulfillments?.length > 0,
     };
+
+    const title = event === 'order_fulfilled'
+      ? `📦 Tracking Added #${order.orderNumber} — ${store}`
+      : `🛒 New Order #${order.orderNumber} — ${store}`;
 
     await getMessaging().send({
       token: process.env.FCM_TOKEN,
       notification: {
-        title: `🛒 New Order #${order.orderNumber} — ${store}`,
-        body: `${order.customer} · ${order.currency} ${order.total}`,
+        title,
+        body: `${order.customer.trim()} · ${order.currency} ${order.total}`,
       },
       data: {
         orderId: String(order.id),
-        store: store,
+        orderNumber: String(order.orderNumber),
+        customer: order.customer.trim(),
+        total: String(order.total),
+        currency: order.currency,
+        store,
+        event,
         trackingAdded: String(order.trackingAdded),
       },
     });
