@@ -13,6 +13,9 @@ if (!getApps().length) {
 
 export async function POST(request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const store = searchParams.get('store') || 'Unknown Store';
+
     const body = await request.json();
 
     const order = {
@@ -20,17 +23,19 @@ export async function POST(request) {
       orderNumber: body.order_number,
       customer: body.customer?.first_name + ' ' + body.customer?.last_name,
       total: body.total_price,
+      currency: body.currency,
       trackingAdded: body.fulfillments?.length > 0,
     };
 
     await getMessaging().send({
       token: process.env.FCM_TOKEN,
       notification: {
-        title: `🛒 New Order #${order.orderNumber}`,
-        body: `${order.customer} — $${order.total}`,
+        title: `🛒 New Order #${order.orderNumber} — ${store}`,
+        body: `${order.customer} · ${order.currency} ${order.total}`,
       },
       data: {
         orderId: String(order.id),
+        store: store,
         trackingAdded: String(order.trackingAdded),
       },
     });
