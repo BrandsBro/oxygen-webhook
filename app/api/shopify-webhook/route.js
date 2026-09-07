@@ -26,45 +26,59 @@ export async function POST(request) {
     const body = await request.json();
 
     const order = {
-      id: body.id,
-      orderNumber: body.order_number,
-      customer: (body.customer?.first_name || '') + ' ' + (body.customer?.last_name || ''),
+      id: String(body.id),
+      order_number: String(body.order_number),
+      customer: ((body.customer?.first_name || '') + ' ' + (body.customer?.last_name || '')).trim(),
       total: body.total_price,
       currency: body.currency || 'USD',
-      trackingAdded: body.fulfillments?.length > 0,
+      store,
+      tracking_added: event === 'order_fulfilled',
+      event,
     };
 
-    // Get latest FCM token from Supabase
-    const { data, error } = await supabase
+    // Upsert order to Supabase
+    if (event === 'order_fulfilled') {
+      await supabase
+        .from('orders')
+        .update({ tracking_added: true, event: 'order_fulfilled' })
+        .eq('id', order.id);
+    } else {
+      await supabase
+        .from('orders')
+        .upsert(order);
+    }
+
+    // Get latest FCM token
+    const { data: tokenData } = await supabase
       .from('fcm_tokens')
       .select('token')
       .order('updated_at', { ascending: false })
       .limit(1)
       .single();
 
-    if (error || !data) {
+    if (!tokenData) {
       return Response.json({ error: 'No FCM token found' }, { status: 500 });
     }
 
     const title = event === 'order_fulfilled'
-      ? `📦 Tracking Added #${order.orderNumber} — ${store}`
-      : `🛒 New Order #${order.orderNumber} — ${store}`;
+      ? `📦 Tracking Added #${order.order_number} — ${store}`
+      : `🛒 New Order #${order.order_number} — ${store}`;
 
     await getMessaging().send({
-      token: data.token,
+      token: tokenData.token,
       notification: {
         title,
-        body: `${order.customer.trim()} · ${order.currency} ${order.total}`,
+        body: `${order.customer} · ${order.currency} ${order.total}`,
       },
       data: {
-        orderId: String(order.id),
-        orderNumber: String(order.orderNumber),
-        customer: order.customer.trim(),
+        orderId: order.id,
+        orderNumber: order.order_number,
+        customer: order.customer,
         total: String(order.total),
         currency: order.currency,
         store,
         event,
-        trackingAdded: String(order.trackingAdded),
+        trackingAdded: String(order.tracking_added),
       },
     });
 
